@@ -273,44 +273,45 @@ std::vector<std::unique_ptr<IntervalNode>> index(sam_file_input_type & input_fil
    \param end The end position of the search.
    \param file_position The resulting position position.
 */
-void get_overlap_file_position(std::unique_ptr<IntervalNode> const & node,
+void get_overlap_file_position(std::unique_ptr<IntervalNode> & node,
                              uint32_t const & start,
                              uint32_t const & end,
                              std::streampos & file_position)
 {
-    if (!node)
+    while(node)
     {
-        return;
+        uint32_t cur_start = node->get_start();
+        uint32_t cur_end = node->get_end();
+
+        /*
+         * There are six possibilities:
+         * 1. The query interval is wholly to the left of the current start (end < cur_start).
+         * 2. The query interval is partially to the left of the current start (start < cur_start && end >= cur_start).
+         * 3. The query interval is contained within the current start and end (start >= cur_start && end <= cur_end).
+         * 4. The query interval contains the current start and end (start < cur_start && end > cur_end).
+         * 5. The query interval is partially to the right of the current end (start <= cur_end && end > cur_end).
+         * 6. The query interval is wholly to the right of the current end (start > cur_end).
+         *
+         * In case 1, do not store the file position and search the left subtree.
+         * In cases 2 through 5, store the file position and search the left subtree.
+         * In case 6, do not store the file position and search the right subtree.
+        */
+        if (end < cur_start)
+        {
+            node = std::move(node->get_left_node());
+        }
+        else if (start > cur_end)
+        {
+            node = std::move(node->get_right_node());
+        }
+        else
+        {
+            file_position = node->get_file_position();
+            node = std::move(node->get_left_node());
+        }
     }
 
-    uint32_t cur_start = node->get_start();
-    uint32_t cur_end = node->get_end();
-    /*
-     * There are six possibilities:
-     * 1. The query interval is wholly to the left of the current start (end < cur_start).
-     * 2. The query interval is partially to the left of the current start (start < cur_start && end >= cur_start).
-     * 3. The query interval is contained within the current start and end (start >= cur_start && end <= cur_end).
-     * 4. The query interval contains the current start and end (start < cur_start && end > cur_end).
-     * 5. The query interval is partially to the right of the current end (start <= cur_end && end > cur_end).
-     * 6. The query interval is wholly to the right of the current end (start > cur_end).
-     *
-     * In case 1, do not store the file position and search the left subtree.
-     * In cases 2 through 5, store the file position and search the left subtree.
-     * In case 6, do not store the file position and search the right subtree.
-    */
-    if (end < cur_start)
-    {
-        get_overlap_file_position(node->get_left_node(), start, end, file_position);
-    }
-    else if (start > cur_end)
-    {
-        get_overlap_file_position(node->get_right_node(), start, end, file_position);
-    }
-    else
-    {
-        file_position = node->get_file_position();
-        get_overlap_file_position(node->get_left_node(), start, end, file_position);
-    }
+    return;
 }
 
 /*!
@@ -354,7 +355,7 @@ void get_correct_position(sam_file_input_type & input,
    \return Returns the file position of the first read in the interval, or -1 if no reads are found.
 */
 std::streampos get_overlap_records(sam_file_input_type & input,
-                                   std::vector<std::unique_ptr<IntervalNode>> const & node_list,
+                                   std::vector<std::unique_ptr<IntervalNode>> & node_list,
                                    Position const & start,
                                    Position const & end,
                                    bool const & verbose = false,
